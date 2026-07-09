@@ -1,1 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FIRSTPASS — Manufacturability Check</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  :root{
+    --bg:#0F2437;
+    --panel:#15304A;
+    --panel-alt:#1B3B58;
+    --grid-line:rgba(154,195,226,0.09);
+    --hairline:#2C4E70;
+    --text:#E7EEF4;
+    --text-dim:#8FA9BF;
+    --brass:#E3A94D;
+    --safe:#4FC79A;
+    --warn:#E3A94D;
+    --danger:#E85B4E;
+    --both:#C23B6B;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-serif;height:100%;}
+  .app{display:flex;flex-direction:column;min-height:100vh;}
 
+  /* header */
+  .topbar{
+    display:flex;align-items:baseline;justify-content:space-between;
+    padding:18px 28px;border-bottom:1px solid var(--hairline);
+    background:linear-gradient(180deg,var(--panel-alt),var(--panel));
+  }
+  .brand{display:flex;align-items:baseline;gap:12px;}
+  .brand .mark{
+    font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:20px;letter-spacing:0.04em;
+    color:var(--text);
+  }
+  .brand .mark span{color:var(--brass);}
+  .brand .tag{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim);letter-spacing:0.03em;}
+  .topbar .rev{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim);}
+
+  /* layout */
+  .main{flex:1;display:grid;grid-template-columns:1.5fr 1fr;gap:1px;background:var(--hairline);}
+  @media (max-width:880px){ .main{grid-template-columns:1fr;} }
+
+  /* viewer */
+  .viewer-pane{background:var(--bg);position:relative;display:flex;flex-direction:column;min-height:480px;}
+  .viewer-toolbar{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:10px 16px;border-bottom:1px solid var(--hairline);background:var(--panel);
+  }
+  .viewer-toolbar .fname{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%;}
+  .btnrow{display:flex;gap:8px;}
+  .btn{
+    font-family:'IBM Plex Sans',sans-serif;font-size:12px;font-weight:500;
+    background:transparent;border:1px solid var(--hairline);color:var(--text);
+    padding:7px 12px;border-radius:3px;cursor:pointer;transition:border-color .15s, color .15s;
+  }
+  .btn:hover{border-color:var(--brass);color:var(--brass);}
+  .btn.primary{background:var(--brass);color:#1A2130;border-color:var(--brass);}
+  .btn.primary:hover{filter:brightness(1.08);color:#1A2130;}
+
+  .canvas-wrap{flex:1;position:relative;}
+  canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab;}
+  canvas.dragging{cursor:grabbing;}
+
+  .dropzone{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    flex-direction:column;gap:14px;
+    background:
+      linear-gradient(var(--grid-line) 1px, transparent 1px) 0 0/32px 32px,
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px) 0 0/32px 32px,
+      var(--bg);
+    border:1px dashed var(--hairline);margin:14px;border-radius:4px;
+    transition:border-color .15s, background .15s;
+  }
+  .dropzone.hover{border-color:var(--brass);}
+  .dropzone p{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--text-dim);text-align:center;max-width:320px;line-height:1.6;margin:0;}
+  .dropzone .big{font-family:'Space Grotesk',sans-serif;font-size:15px;color:var(--text);font-weight:600;}
+  .dropzone.hidden{display:none;}
+
+  .legend{
+    position:absolute;bottom:14px;left:14px;display:flex;gap:14px;
+    background:rgba(21,48,74,0.85);backdrop-filter:blur(4px);
+    padding:8px 12px;border-radius:3px;border:1px solid var(--hairline);
+    font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim);
+  }
+  .legend.hidden{display:none;}
+  .legend .item{display:flex;align-items:center;gap:6px;}
+  .swatch{width:9px;height:9px;border-radius:2px;display:inline-block;}
+
+  .hint{
+    position:absolute;top:14px;right:14px;
+    font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text-dim);
+    background:rgba(21,48,74,0.7);padding:5px 9px;border-radius:3px;border:1px solid var(--hairline);
+  }
+  .hint.hidden{display:none;}
+
+  /* report pane */
+  .report-pane{background:var(--panel);display:flex;flex-direction:column;}
+  .report-header{padding:16px 20px 4px;border-bottom:1px solid var(--hairline);}
+  .report-header .eyebrow{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.12em;color:var(--text-dim);text-transform:uppercase;}
+  .report-header h2{font-family:'Space Grotesk',sans-serif;font-size:16px;margin:4px 0 14px;}
+
+  .empty-state{padding:28px 20px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--text-dim);line-height:1.7;}
+
+  .gauge-row{display:flex;align-items:center;gap:18px;padding:18px 20px;border-bottom:1px solid var(--hairline);}
+  .gauge-row.hidden{display:none;}
+  .gauge-num{font-family:'Space Grotesk',sans-serif;font-size:38px;font-weight:700;}
+  .gauge-label{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text-dim);letter-spacing:0.08em;text-transform:uppercase;margin-top:2px;}
+
+  .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:0;border-bottom:1px solid var(--hairline);}
+  .stat-grid.hidden{display:none;}
+  .stat{padding:12px 20px;border-right:1px solid var(--hairline);border-bottom:1px solid var(--hairline);}
+  .stat:nth-child(2n){border-right:none;}
+  .stat .k{font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.07em;}
+  .stat .v{font-family:'IBM Plex Mono',monospace;font-size:14px;margin-top:3px;}
+
+  .findings{flex:1;overflow-y:auto;padding:6px 0;}
+  .finding{
+    display:flex;gap:10px;padding:12px 20px;border-bottom:1px solid var(--hairline);
+    align-items:flex-start;
+  }
+  .finding .dot{width:8px;height:8px;border-radius:2px;margin-top:5px;flex:none;}
+  .finding .body b{display:block;font-size:12.5px;font-weight:600;margin-bottom:3px;}
+  .finding .body p{margin:0;font-size:12px;color:var(--text-dim);line-height:1.55;}
+
+  .notes{
+    padding:14px 20px 20px;font-family:'IBM Plex Mono',monospace;font-size:10.5px;
+    color:var(--text-dim);line-height:1.7;border-top:1px solid var(--hairline);
+  }
+  .notes b{color:var(--brass);}
+  input[type=file]{display:none;}
+  .loading{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--brass);
+    background:rgba(15,36,55,0.6);
+  }
+  .loading.hidden{display:none;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="mark">FIRST<span>PASS</span></div>
+      <div class="tag">manufacturability check — before you cut metal</div>
+    </div>
+    <div class="rev">v0.1 · geometric DFM pass</div>
+  </div>
+
+  <div class="main">
+    <div class="viewer-pane">
+      <div class="viewer-toolbar">
+        <span class="fname" id="fname">no part loaded</span>
+        <div class="btnrow">
+          <button class="btn" id="sampleBtn">Load sample part</button>
+          <button class="btn primary" id="uploadBtn">Upload STL</button>
+          <input type="file" id="fileInput" accept=".stl">
+        </div>
+      </div>
+      <div class="canvas-wrap">
+        <canvas id="canvas"></canvas>
+        <div class="dropzone" id="dropzone">
+          <div class="big">Drop an STL here</div>
+          <p>Or click "Upload STL" above. Nothing leaves your browser — the file is parsed and analyzed locally. No sample part yet? Click "Load sample part" to see it run on a bracket with a deliberate thin wall and an unsupported overhang.</p>
+        </div>
+        <div class="legend hidden" id="legend">
+          <div class="item"><span class="swatch" style="background:var(--safe)"></span>ok</div>
+          <div class="item"><span class="swatch" style="background:var(--warn)"></span>overhang</div>
+          <div class="item"><span class="swatch" style="background:var(--danger)"></span>thin wall</div>
+          <div class="item"><span class="swatch" style="background:var(--both)"></span>both</div>
+        </div>
+        <div class="hint hidden" id="hint">drag to orbit · scroll to zoom</div>
+        <div class="loading hidden" id="loading">analyzing geometry…</div>
+      </div>
+    </div>
+
+    <div class="report-pane">
+      <div class="report-header">
+        <div class="eyebrow">Inspection report</div>
+        <h2>First-pass findings</h2>
+      </div>
+
+      <div id="emptyState" class="empty-state">
+        Load a part to generate a report. FIRSTPASS runs two geometric checks — overhang angle and local wall thickness — and gives you a risk-scored readout before you commit to a cut, print, or mold.
+      </div>
+
+      <div id="reportBody" style="display:none;">
+        <div class="gauge-row">
+          <svg width="76" height="76" viewBox="0 0 76 76">
+            <circle cx="38" cy="38" r="32" fill="none" stroke="var(--hairline)" stroke-width="7"/>
+            <circle id="gaugeArc" cx="38" cy="38" r="32" fill="none" stroke="var(--safe)" stroke-width="7"
+              stroke-linecap="round" transform="rotate(-90 38 38)" stroke-dasharray="201 201" stroke-dashoffset="201"/>
+          </svg>
+          <div>
+            <div class="gauge-num" id="gaugeNum">--</div>
+            <div class="gauge-label">manufacturability score</div>
+          </div>
+        </div>
+
+        <div class="stat-grid">
+          <div class="stat"><div class="k">Triangles</div><div class="v" id="statTris">—</div></div>
+          <div class="stat"><div class="k">Bounding box (mm)</div><div class="v" id="statBbox">—</div></div>
+          <div class="stat"><div class="k">Overhang faces</div><div class="v" id="statOverhang">—</div></div>
+          <div class="stat"><div class="k">Thin-wall hits</div><div class="v" id="statThin">—</div></div>
+        </div>
+
+        <div class="findings" id="findings"></div>
+
+        <div class="notes">
+          <b>Read this before you trust it:</b> overhang detection is a 45° face-angle heuristic and doesn't yet know if a neighboring feature is holding a surface up. Thin-wall detection is ray-sampled, not exhaustive, on large files. Hole depth-to-diameter and thread callout checks are v2. Treat this as a fast first pass, not a signed-off DFM review.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+
+  // ---------- geometry helpers ----------
+
+  function computeNormal(v0,v1,v2){
+    const ax=v1[0]-v0[0], ay=v1[1]-v0[1], az=v1[2]-v0[2];
+    const bx=v2[0]-v0[0], by=v2[1]-v0[1], bz=v2[2]-v0[2];
+    let nx=ay*bz-az*by, ny=az*bx-ax*bz, nz=ax*by-ay*bx;
+    const len=Math.hypot(nx,ny,nz)||1;
+    return [nx/len, ny/len, nz/len];
+  }
+
+  function boxTriangles(cx,cy,cz,sx,sy,sz){
+    const hx=sx/2, hy=sy/2, hz=sz/2;
+    const x0=cx-hx,x1=cx+hx,y0=cy-hy,y1=cy+hy,z0=cz-hz,z1=cz+hz;
+    const tris=[];
+    function quad(a,b,c,d,n){
+      tris.push({v:[a,b,c], normal:n});
+      tris.push({v:[a,c,d], normal:n});
+    }
+    quad([x1,y0,z0],[x1,y1,z0],[x1,y1,z1],[x1,y0,z1], [1,0,0]);
+    quad([x0,y1,z0],[x0,y0,z0],[x0,y0,z1],[x0,y1,z1], [-1,0,0]);
+    quad([x1,y1,z0],[x0,y1,z0],[x0,y1,z1],[x1,y1,z1], [0,1,0]);
+    quad([x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1], [0,-1,0]);
+    quad([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1], [0,0,1]);
+    quad([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0], [0,0,-1]);
+    return tris;
+  }
+
+  function generateSamplePart(){
+    let tris=[];
+    // base plate (sits on the bed, z: 0 -> 6)
+    tris = tris.concat(boxTriangles(0,0,3, 70,45,6));
+    // solid wall, well-supported (z: 6 -> 40)
+    tris = tris.concat(boxTriangles(-25,0,23, 6,45,34));
+    // deliberately thin fin, free-standing (0.6mm thick)
+    tris = tris.concat(boxTriangles(2,0,19, 0.6,32,26));
+    // unsupported overhang tab cantilevered off the wall top (z: 40 -> 46)
+    tris = tris.concat(boxTriangles(-9,0,43, 26,45,6));
+    return tris;
+  }
+
+  // ---------- STL parsing ----------
+
+  function isBinarySTL(buffer){
+    if (buffer.byteLength < 84) return false;
+    const view = new DataView(buffer);
+    const count = view.getUint32(80, true);
+    return (84 + count*50) === buffer.byteLength;
+  }
+
+  function parseBinarySTL(buffer){
+    const view = new DataView(buffer);
+    const count = view.getUint32(80, true);
+    const tris = [];
+    let offset = 84;
+    for (let i=0;i<count;i++){
+      const nx=view.getFloat32(offset,true), ny=view.getFloat32(offset+4,true), nz=view.getFloat32(offset+8,true);
+      offset += 12;
+      const v=[];
+      for (let k=0;k<3;k++){
+        v.push([view.getFloat32(offset,true), view.getFloat32(offset+4,true), view.getFloat32(offset+8,true)]);
+        offset += 12;
+      }
+      offset += 2;
+      let normal=[nx,ny,nz];
+      if (Math.hypot(nx,ny,nz) < 1e-6) normal = computeNormal(v[0],v[1],v[2]);
+      tris.push({v, normal});
+    }
+    return tris;
+  }
+
+  function parseASCIISTL(text){
+    const tris=[];
+    const facetRe = /facet\s+normal\s+([\-\d.eE+]+)\s+([\-\d.eE+]+)\s+([\-\d.eE+]+)([\s\S]*?)endfacet/g;
+    const vertexRe = /vertex\s+([\-\d.eE+]+)\s+([\-\d.eE+]+)\s+([\-\d.eE+]+)/g;
+    let m;
+    while ((m = facetRe.exec(text))){
+      let normal=[parseFloat(m[1]),parseFloat(m[2]),parseFloat(m[3])];
+      const body=m[4];
+      const v=[];
+      let vm; vertexRe.lastIndex=0;
+      while ((vm = vertexRe.exec(body))) v.push([parseFloat(vm[1]),parseFloat(vm[2]),parseFloat(vm[3])]);
+      if (v.length===3){
+        if (Math.hypot(normal[0],normal[1],normal[2]) < 1e-6) normal = computeNormal(v[0],v[1],v[2]);
+        tris.push({v, normal});
+      }
+    }
+    return tris;
+  }
+
+  function parseSTL(buffer){
+    return isBinarySTL(buffer) ? parseBinarySTL(buffer) : parseASCIISTL(new TextDecoder().decode(buffer));
+  }
+
+  // ---------- analysis ----------
+
+  function bboxOf(tris){
+    const min=[Infinity,Infinity,Infinity], max=[-Infinity,-Infinity,-Infinity];
+    tris.forEach(t=>t.v.forEach(p=>{
+      for(let i=0;i<3;i++){ if(p[i]<min[i]) min[i]=p[i]; if(p[i]>max[i]) max[i]=p[i]; }
+    }));
+    return {min, max, size:[max[0]-min[0], max[1]-min[1], max[2]-min[2]]};
+  }
+
+  function analyze(tris, bbox, mesh){
+    const diag = Math.hypot(...bbox.size) || 1;
+    const minZ = bbox.min[2];
+    const eps = bbox.size[2]*0.01 + 0.01;
+    const cosThresh = Math.cos(THREE.MathUtils.degToRad(45));
+
+    const flags = new Array(tris.length).fill(0);
+    let overhangCount = 0;
+
+    tris.forEach((t,i)=>{
+      const nz = t.normal[2];
+      const lowestZ = Math.min(t.v[0][2], t.v[1][2], t.v[2][2]);
+      if (nz < -cosThresh && lowestZ > minZ + eps){
+        flags[i] |= 1;
+        overhangCount++;
+      }
+    });
+
+    // thin-wall via sampled raycasting against the mesh itself
+    const thinThreshold = diag * 0.02;
+    const maxRayBudget = 20000000;
+    const sampleCount = Math.max(30, Math.min(1200, Math.floor(maxRayBudget / Math.max(tris.length,1))));
+    const step = Math.max(1, Math.floor(tris.length / sampleCount));
+
+    const raycaster = new THREE.Raycaster();
+    const offsetEps = diag * 0.0015;
+    let thinHits = 0, sampled = 0;
+
+    for (let i=0; i<tris.length; i+=step){
+      const t = tris[i];
+      const cx=(t.v[0][0]+t.v[1][0]+t.v[2][0])/3;
+      const cy=(t.v[0][1]+t.v[1][1]+t.v[2][1])/3;
+      const cz=(t.v[0][2]+t.v[1][2]+t.v[2][2])/3;
+      const n = new THREE.Vector3(...t.normal).normalize();
+      const origin = new THREE.Vector3(cx,cy,cz).addScaledVector(n, -offsetEps);
+      const dir = n.clone().multiplyScalar(-1);
+      raycaster.set(origin, dir);
+      raycaster.far = diag * 2;
+      const hits = raycaster.intersectObject(mesh, false);
+      sampled++;
+      if (hits.length && hits[0].distance < thinThreshold){
+        flags[i] |= 2;
+        thinHits++;
+      }
+    }
+
+    return { flags, overhangCount, thinHits, sampled, thinThreshold };
+  }
+
+  // ---------- three.js scene ----------
+
+  const canvas = document.getElementById('canvas');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+  const bgColor = 0x0F2437;
+  renderer.setClearColor(bgColor, 1);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100000);
+
+  scene.add(new THREE.HemisphereLight(0xbfd8ec, 0x0b1a28, 0.9));
+  const key = new THREE.DirectionalLight(0xffffff, 0.9);
+  key.position.set(1, 1.2, 1.6);
+  scene.add(key);
+  const fill = new THREE.DirectionalLight(0x6fa0c8, 0.35);
+  fill.position.set(-1.4, -0.8, 0.6);
+  scene.add(fill);
+
+  let currentMesh = null;
+  let target = new THREE.Vector3(0,0,0);
+  let radius = 200, azimuth = Math.PI*0.28, polar = Math.PI*0.36;
+
+  function updateCamera(){
+    const x = target.x + radius*Math.sin(polar)*Math.cos(azimuth);
+    const y = target.y + radius*Math.sin(polar)*Math.sin(azimuth);
+    const z = target.z + radius*Math.cos(polar);
+    camera.position.set(x,y,z);
+    camera.up.set(0,0,1);
+    camera.lookAt(target);
+  }
+
+  function resize(){
+    const rect = canvas.parentElement.getBoundingClientRect();
+    renderer.setSize(rect.width, rect.height, false);
+    camera.aspect = rect.width / Math.max(rect.height,1);
+    camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(resize).observe(canvas.parentElement);
+  resize();
+
+  (function animate(){
+    requestAnimationFrame(animate);
+    renderer.render(scene, camera);
+  })();
+
+  // orbit controls (manual, pointer-based)
+  let dragging=false, lastX=0, lastY=0;
+  canvas.addEventListener('pointerdown', e=>{ dragging=true; lastX=e.clientX; lastY=e.clientY; canvas.classList.add('dragging'); canvas.setPointerCapture(e.pointerId); });
+  canvas.addEventListener('pointermove', e=>{
+    if(!dragging) return;
+    const dx=e.clientX-lastX, dy=e.clientY-lastY;
+    azimuth -= dx*0.006;
+    polar = Math.min(Math.PI-0.05, Math.max(0.05, polar - dy*0.006));
+    lastX=e.clientX; lastY=e.clientY;
+    updateCamera();
+  });
+  canvas.addEventListener('pointerup', e=>{ dragging=false; canvas.classList.remove('dragging'); });
+  canvas.addEventListener('pointerleave', ()=>{ dragging=false; canvas.classList.remove('dragging'); });
+  canvas.addEventListener('wheel', e=>{
+    e.preventDefault();
+    radius *= (1 + e.deltaY*0.001);
+    radius = Math.max(1, radius);
+    updateCamera();
+  }, { passive:false });
+
+  const colorMap = {
+    0: new THREE.Color(0x4FC79A),
+    1: new THREE.Color(0xE3A94D),
+    2: new THREE.Color(0xE85B4E),
+    3: new THREE.Color(0xC23B6B),
+  };
+
+  function buildRenderGeometry(tris){
+    const positions = new Float32Array(tris.length*9);
+    tris.forEach((t,i)=>{
+      let o=i*9;
+      for(let k=0;k<3;k++){ positions[o+k*3]=t.v[k][0]; positions[o+k*3+1]=t.v[k][1]; positions[o+k*3+2]=t.v[k][2]; }
+    });
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.computeVertexNormals();
+    return geo;
+  }
+
+  function colorGeometry(geo, tris, flags){
+    const colors = new Float32Array(tris.length*9);
+    tris.forEach((t,i)=>{
+      const c = colorMap[flags[i]] || colorMap[0];
+      let o=i*9;
+      for(let k=0;k<3;k++){ colors[o+k*3]=c.r; colors[o+k*3+1]=c.g; colors[o+k*3+2]=c.b; }
+    });
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  }
+
+  // ---------- UI wiring ----------
+
+  const dropzone = document.getElementById('dropzone');
+  const legend = document.getElementById('legend');
+  const hint = document.getElementById('hint');
+  const loading = document.getElementById('loading');
+  const emptyState = document.getElementById('emptyState');
+  const reportBody = document.getElementById('reportBody');
+  const fname = document.getElementById('fname');
+  const fileInput = document.getElementById('fileInput');
+
+  document.getElementById('uploadBtn').addEventListener('click', ()=>fileInput.click());
+  document.getElementById('sampleBtn').addEventListener('click', ()=>{
+    loadPart(generateSamplePart(), 'sample_bracket.stl');
+  });
+  fileInput.addEventListener('change', e=>{
+    const f = e.target.files[0];
+    if(!f) return;
+    readFile(f);
+  });
+  ['dragover','dragenter'].forEach(evt=>dropzone.addEventListener(evt, e=>{ e.preventDefault(); dropzone.classList.add('hover'); }));
+  ['dragleave','drop'].forEach(evt=>dropzone.addEventListener(evt, e=>{ e.preventDefault(); dropzone.classList.remove('hover'); }));
+  dropzone.addEventListener('drop', e=>{
+    const f = e.dataTransfer.files[0];
+    if(!f) return;
+    readFile(f);
+  });
+
+  function readFile(f){
+    fname.textContent = f.name + ' — reading…';
+    const reader = new FileReader();
+    reader.onload = ev=>{
+      try{
+        const tris = parseSTL(ev.target.result);
+        if(!tris.length) throw new Error('no triangles parsed');
+        loadPart(tris, f.name);
+      }catch(err){
+        fname.textContent = f.name + ' — could not parse (is this a valid STL?)';
+      }
+    };
+    reader.readAsArrayBuffer(f);
+  }
+
+  function loadPart(tris, name){
+    loading.classList.remove('hidden');
+    fname.textContent = name;
+    setTimeout(()=>{
+      const bbox = bboxOf(tris);
+      const geo = buildRenderGeometry(tris);
+
+      if(currentMesh){ scene.remove(currentMesh); currentMesh.geometry.dispose(); currentMesh.material.dispose(); }
+      const material = new THREE.MeshStandardMaterial({ vertexColors:true, side:THREE.DoubleSide, flatShading:true, roughness:0.65, metalness:0.08 });
+      const mesh = new THREE.Mesh(geo, material);
+      scene.add(mesh);
+      currentMesh = mesh;
+
+      const result = analyze(tris, bbox, mesh);
+      colorGeometry(geo, tris, result.flags);
+
+      const center = [ (bbox.min[0]+bbox.max[0])/2, (bbox.min[1]+bbox.max[1])/2, (bbox.min[2]+bbox.max[2])/2 ];
+      target = new THREE.Vector3(...center);
+      const diag = Math.hypot(...bbox.size) || 10;
+      radius = diag*1.7;
+      azimuth = Math.PI*0.28; polar = Math.PI*0.36;
+      updateCamera();
+
+      dropzone.classList.add('hidden');
+      legend.classList.remove('hidden');
+      hint.classList.remove('hidden');
+      loading.classList.add('hidden');
+
+      renderReport(tris, bbox, result);
+    }, 20);
+  }
+
+  function renderReport(tris, bbox, result){
+    emptyState.style.display = 'none';
+    reportBody.style.display = 'block';
+
+    const overhangRatio = result.overhangCount / tris.length;
+    const thinRatio = result.sampled ? result.thinHits / result.sampled : 0;
+    const penalty = Math.min(100, overhangRatio*100*0.6 + thinRatio*100*0.85);
+    const score = Math.round(Math.max(0, 100 - penalty));
+
+    document.getElementById('statTris').textContent = tris.length.toLocaleString();
+    document.getElementById('statBbox').textContent = bbox.size.map(v=>v.toFixed(1)).join(' × ');
+    document.getElementById('statOverhang').textContent = result.overhangCount.toLocaleString() + ' (' + (overhangRatio*100).toFixed(1) + '%)';
+    document.getElementById('statThin').textContent = result.thinHits + ' / ' + result.sampled + ' rays';
+
+    const gaugeNum = document.getElementById('gaugeNum');
+    const gaugeArc = document.getElementById('gaugeArc');
+    gaugeNum.textContent = score;
+    const scoreColor = score>=80 ? '#4FC79A' : score>=50 ? '#E3A94D' : '#E85B4E';
+    gaugeNum.style.color = scoreColor;
+    gaugeArc.setAttribute('stroke', scoreColor);
+    const circumference = 201;
+    gaugeArc.setAttribute('stroke-dasharray', circumference + ' ' + circumference);
+    gaugeArc.setAttribute('stroke-dashoffset', String(circumference * (1 - score/100)));
+
+    const findings = [];
+    if (overhangRatio > 0.015){
+      findings.push({
+        sev:'warn',
+        title: 'Unsupported overhang surfaces',
+        body: (overhangRatio*100).toFixed(1)+'% of faces are angled more than 45° from vertical and unsupported below. These will need print supports, a reorientation, or a redesigned draft angle depending on your process.'
+      });
+    }
+    if (thinRatio > 0.02){
+      findings.push({
+        sev:'danger',
+        title: 'Thin-wall regions detected',
+        body: 'Sampled ray-casting found local wall thickness under ~' + result.thinThreshold.toFixed(2) + 'mm in ' + (thinRatio*100).toFixed(1) + '% of sampled locations. That is below a safe minimum for most FDM/injection processes and a common warp or breakage point.'
+      });
+    }
+    const maxDim = Math.max(...bbox.size);
+    if (maxDim > 250){
+      findings.push({
+        sev:'warn',
+        title: 'Exceeds common desktop build volume',
+        body: 'Largest dimension is ' + maxDim.toFixed(1) + 'mm, past the ~250mm envelope of a typical desktop FDM printer. Check your target machine\'s bed size, or plan to split the part.'
+      });
+    }
+    if (findings.length === 0){
+      findings.push({
+        sev:'safe',
+        title: 'No high-risk geometry flagged',
+        body: 'This pass didn\'t catch overhang or thin-wall risk. Still worth a manual check on tolerances, thread callouts, and hole depth-to-diameter ratios — those aren\'t covered yet.'
+      });
+    }
+
+    const sevColor = { warn:'var(--warn)', danger:'var(--danger)', safe:'var(--safe)' };
+    document.getElementById('findings').innerHTML = findings.map(f=>
+      '<div class="finding"><span class="dot" style="background:'+sevColor[f.sev]+'"></span>'+
+      '<div class="body"><b>'+f.title+'</b><p>'+f.body+'</p></div></div>'
+    ).join('');
+  }
+
+})();
+</script>
+</body>
+</html>
